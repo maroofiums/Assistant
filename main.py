@@ -1,4 +1,3 @@
-
 from assistant.agent import ResearchAssistant
 
 assistant = ResearchAssistant()

@@ -44,3 +44,4 @@ class ResearchAssistant:
         response = self.model.invoke(messages)
         
         return response.content
+    
