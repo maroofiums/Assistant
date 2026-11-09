@@ -9,8 +9,8 @@ while True:
         break
 
     try:
-        answer = assistant.ask(question)
-        print("\nAssistant:", answer)
+        print("\nAssistant: ", end="", flush=True)
+        assistant.stream(question)
 
     except Exception as error:
         print(f"\nError: {error}")

@@ -1,4 +1,3 @@
-
 from langchain_core.prompts import (
     ChatPromptTemplate,
     MessagesPlaceholder,
@@ -50,6 +49,11 @@ class ResearchAssistant:
 
         return self.sessions[session_id]
 
+
+    def reset_session(self, session_id="default"):
+        self.sessions.pop(session_id, None)
+
+
     def ask(self, question: str, session_id="default"):
 
         if not question.strip():
@@ -67,3 +71,40 @@ class ResearchAssistant:
         )
 
         return response.text
+
+
+    def stream(self, question: str, session_id="default"):
+    
+        if not question.strip():
+            raise ValueError(
+                "Question cannot be empty."
+            )
+    
+        for chunk in self.agent.stream(
+            {"question": question},
+            config={
+                "configurable": {
+                    "session_id": session_id
+                }
+            }
+        ):
+
+            content = chunk.content
+
+            if isinstance(content, str):
+                text = content
+
+            elif isinstance(content, list):
+                text = "".join(
+                    block.get("text", "")
+                    for block in content
+                    if isinstance(block, dict)
+                    and block.get("type") == "text"
+                )
+
+            else:
+                text = ""
+
+            print(text, end="", flush=True)
+
+        print()
