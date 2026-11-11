@@ -1,110 +1,44 @@
-from langchain_core.prompts import (
-    ChatPromptTemplate,
-    MessagesPlaceholder,
-)
-from langchain_core.chat_history import InMemoryChatMessageHistory
-from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.tools import tool
+from langchain_google_genai import ChatGoogleGenerativeAI
 
+from assistant.tools import calculator
 from assistant.model import get_model
 
+@tool 
+def calculate(expression: str) -> str:
+    """Calculate a mathematical expression."""
+    return calculator(expression)
 
-class ResearchAssistant:
-
-    def __init__(self):
+class ResearchAgent:
+    def __init__(self) -> None:
         self.model = get_model()
-        self.sessions = {}
+        self.agent = self.model.bind_tools([calculate])
 
 
-        prompt = ChatPromptTemplate.from_messages([
-            (
-                "system",
-                """
-                You are an AI Research Assistant.
+    def ask(self, question: str):
 
-                - Explain technical and scientific concepts.
-                - Analyze research questions.
-                - Provide accurate, structured answers.
-                - Distinguish facts from assumptions.
-                - Admit uncertainty when necessary.
-                """
-            ),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{question}"),
-        ])
+        messages = [("human", question)]
 
-        chain = prompt | self.model
+        for _ in range(5):
+            response = self.agent.invoke(messages)
 
-        self.agent = RunnableWithMessageHistory(
-            chain,
-            self.get_session_history,
-            input_messages_key="question",
-            history_messages_key="history"
-        )
+            if not response.tool_calls:
+                return response.content
+
+            messages.append(response)
+
+            for call in response.tool_calls:
+                result = calculate.invoke(call["args"])
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": str(result)
+                })
+
+        return "Maximum tool iterations reached."
 
 
-    def get_session_history(self, session_id: str):
-
-        if session_id not in self.sessions:
-            self.sessions[session_id] = InMemoryChatMessageHistory()
-
-        return self.sessions[session_id]
 
 
-    def reset_session(self, session_id="default"):
-        self.sessions.pop(session_id, None)
-
-
-    def ask(self, question: str, session_id="default"):
-
-        if not question.strip():
-            raise ValueError(
-                "Question cannot be empty."
-            )
-
-        response = self.agent.invoke(
-            {"question": question},
-            config={
-                "configurable": {
-                    "session_id": session_id
-                }
-            }
-        )
-
-        return response.text
-
-
-    def stream(self, question: str, session_id="default"):
-    
-        if not question.strip():
-            raise ValueError(
-                "Question cannot be empty."
-            )
-    
-        for chunk in self.agent.stream(
-            {"question": question},
-            config={
-                "configurable": {
-                    "session_id": session_id
-                }
-            }
-        ):
-
-            content = chunk.content
-
-            if isinstance(content, str):
-                text = content
-
-            elif isinstance(content, list):
-                text = "".join(
-                    block.get("text", "")
-                    for block in content
-                    if isinstance(block, dict)
-                    and block.get("type") == "text"
-                )
-
-            else:
-                text = ""
-
-            print(text, end="", flush=True)
-
-        print()
+        
