@@ -1,3 +1,7 @@
+
+import pickle
+from pathlib import Path
+
 import faiss
 import numpy as np
 
@@ -21,26 +25,18 @@ class EmbeddingIndex:
         if not chunks:
             raise ValueError("No document chunks provided.")
 
-        # 1. Extract text
         texts = [chunk.page_content for chunk in chunks]
 
-        # 2. Convert text into embeddings
         embeddings = self.embedder.embed_documents(texts)
 
-        # 3. Convert embeddings into NumPy float32 matrix
-        vectors = np.array(embeddings, dtype="float32")
-
-        # 4. Normalize vectors for cosine similarity
+        vectors = np.array(embeddings, dtype=np.float32)
         faiss.normalize_L2(vectors)
 
-        # 5. Create FAISS index
         dimension = vectors.shape[1]
-        self.index = faiss.IndexFlatIP(dimension)
 
-        # 6. Add vectors to index
+        self.index = faiss.IndexFlatIP(dimension)
         self.index.add(vectors)
 
-        # Keep original documents for retrieving text
         self.documents = chunks
 
         print("Index created successfully.")
@@ -55,18 +51,20 @@ class EmbeddingIndex:
         if not query.strip():
             raise ValueError("Query cannot be empty.")
 
-        # Embed query
+        if k < 1:
+            raise ValueError("k must be at least 1.")
+
         query_vector = self.embedder.embed_query(query)
 
         query_vector = np.array(
             [query_vector],
-            dtype="float32"
+            dtype=np.float32
         )
 
-        # Normalize query
         faiss.normalize_L2(query_vector)
 
-        # Search nearest vectors
+        k = min(k, self.index.ntotal)
+
         scores, indices = self.index.search(query_vector, k)
 
         results = []
@@ -82,3 +80,48 @@ class EmbeddingIndex:
             })
 
         return results
+
+    def save(self, path="data/vector_store"):
+
+        if self.index is None:
+            raise RuntimeError("No index to save.")
+
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+
+        faiss.write_index(
+            self.index,
+            str(path / "index.faiss")
+        )
+
+        with open(path / "documents.pkl", "wb") as file:
+            pickle.dump(self.documents, file)
+
+        print(f"Index saved: {path}")
+
+    def load(self, path="data/vector_store"):
+
+        path = Path(path)
+
+        index_path = path / "index.faiss"
+        documents_path = path / "documents.pkl"
+
+        if not index_path.exists() or not documents_path.exists():
+            raise FileNotFoundError(
+                f"Index files not found in: {path}"
+            )
+
+        self.index = faiss.read_index(str(index_path))
+
+        with open(documents_path, "rb") as file:
+            self.documents = pickle.load(file)
+
+        if self.index.ntotal != len(self.documents):
+            raise ValueError(
+                "Index and document count do not match."
+            )
+
+        print(f"Index loaded: {path}")
+        print("Indexed vectors:", self.index.ntotal)
+
+        return self

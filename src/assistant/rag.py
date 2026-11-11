@@ -1,63 +1,37 @@
-from langchain_core.prompts import ChatPromptTemplate
 
+from assistant.embedding_index import EmbeddingIndex
 from assistant.model import get_model
-from assistant.vector_store import ResearchVectorStore
 
 
 class ResearchRAG:
 
-    def __init__(self, index_path="data/vector_store"):
-        self.vector_store = ResearchVectorStore()
-        self.vector_store.load(path=index_path)
+    def __init__(self):
+        self.index = EmbeddingIndex()
+        self.index.load()
 
         self.model = get_model()
-        self.prompt = ChatPromptTemplate.from_messages([
-            (
-                "system",
-                """
-                You are a research paper assistant.
 
-                Answer using only the provided context.
-                If the context does not contain the answer,
-                clearly say that the information is unavailable.
+    def ask(self, question: str, k: int = 4):
 
-                Cite the relevant page numbers when possible.
-                """
-            ),
-            (
-                "human",
-                """
-                Research Context:
-                {context}
-
-                Question:
-                {question}
-                """
-            )
-        ])
-
-        self.chain = self.prompt | self.model
-
-
-    def ask(self, question: str, k: int = 4) -> str:
-        if not question.strip():
-            raise ValueError("Question cannot be empty.")
-
-        documents = self.vector_store.search(query=question, k=k)   
+        results = self.index.search(question, k)
 
         context = "\n\n".join(
-            f"[Page {doc.metadata.get('page', "Unknown")}]\n"
-            f"{doc.page_content}"   
-            for doc in documents
+            f"[Page {r['document'].metadata.get('page', '?')}]\n"
+            f"{r['document'].page_content}"
+            for r in results
         )
 
-        response = self.chain.invoke({
-            "context": context,
-            "question": question
-        })
+        prompt = f"""
+        Answer using only this research context.
+        If unavailable, say so.
+        Cite page numbers.
 
+        Context:
+        {context}
 
-        return {
-            "answer": response.content,
-            "sources": documents
-        }
+        Question: {question}
+        """
+
+        response = self.model.invoke(prompt)
+
+        return response.text
